@@ -1,6 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using JwtDemo;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity.Data;
@@ -12,24 +14,14 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+// Adding configuration for Auth 
+builder.Services.Configure<AuthenticationSettings>(builder.Configuration.GetSection("Authentication"));
+
+
+
 // Adding Token to the builder 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options => {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            // ValidIssuer would be based on your IdP
-            ValidIssuer = "https://yourissuer.example",
-            // ValidAudience would be based on your IdP
-            ValidAudience = "https://youraudience.example",
-            // IssuerSigningKey would not be specified if using an IdP
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes("thisisthesecretforgeneratingakey(mustbeatleast32bitlong)")),
-            ClockSkew = TimeSpan.Zero
-        };
-});
+builder.Services.AddJwtAuth(builder.Configuration);
+
 builder.Services.AddAuthorizationBuilder();
 var app = builder.Build();
 
@@ -64,19 +56,28 @@ app.Map("/token", (LoginRequest request) =>
         new Claim(JwtRegisteredClaimNames.Email, request.Email)
     };
 
-    const int TokenLifetimeMinutes = 20;    //Hardcoded for demo purposes
+    const int TokenLifetimeInSec = 20;  
+
+    AuthenticationSettings? authsetting = builder.Configuration.GetSection("Authentication").Get<AuthenticationSettings>(); 
+    if(authsetting is null 
+        || string.IsNullOrWhiteSpace(authsetting.Issuer)
+        || string.IsNullOrWhiteSpace(authsetting.Audience)
+        )
+    {
+        Results.InternalServerError();
+    }
+
     var jwt = new JwtSecurityToken(
-        issuer: "https://yourissuer.example",
-        audience: "https://youraudience.example",
+        issuer: authsetting!.Issuer,
+        audience: authsetting!.Audience,
         claims: claims,
-        //Typical short lifetime used with JWTs
-        expires: DateTime.UtcNow.AddSeconds(TokenLifetimeMinutes),    
+        expires: DateTime.UtcNow.AddSeconds(TokenLifetimeInSec),    
         signingCredentials: credentials);
 
     return Results.Ok(new
     {
         access_token = new JwtSecurityTokenHandler().WriteToken(jwt),
-        expires_in = TokenLifetimeMinutes
+        expires_in = TokenLifetimeInSec
     });
 });
 
