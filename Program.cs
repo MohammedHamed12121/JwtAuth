@@ -22,6 +22,7 @@ builder.Services.Configure<AuthenticationSettings>(builder.Configuration.GetSect
 
 // Adding Token to the builder 
 builder.Services.AddJwtAuth(builder.Configuration);
+builder.Services.AddRoles();
 builder.Services.AddSingleton<RefreshTokenService>();
 
 builder.Services.AddAuthorizationBuilder();
@@ -44,17 +45,32 @@ app.MapGet("/", () =>
 });
 
 
-app.Map("/login", (LoginRequest request, RefreshTokenService tokenService) =>
+app.Map("/login", (AppUser request, RefreshTokenService tokenService) =>
 {
-    if(request.Email != "User@user.com" && request.Password != "Password")  
+    if(request.Email == "User@user.com" && request.Password == "Password")
+    {
+        request.Role = Roles.User;
+    }
+    else if(request.Email == "Admin@admin.com" && request.Password == "Password")
+    {
+        request.Role = Roles.Admin;
+    }
+    else if(request.Email == "Worker@worker.com" && request.Password == "Password")
+    {
+        request.Role = Roles.Worker;
+    }
+    else
+    {
         return Results.Unauthorized();
+    }
+
 
     
-    var jwt = GenerateJwtToken(request.Email);
+    var jwt = GenerateJwtToken(request.Email, request.Role);
 
     string refreshToken = Convert.ToBase64String(Encoding.UTF8.GetBytes(Guid.NewGuid().ToString("N")));
 
-    tokenService.Add(request.Email, refreshToken,  DateTime.UtcNow.AddDays(7));
+    tokenService.Add(request.Email, request.Role, refreshToken,  DateTime.UtcNow.AddDays(7));
     return Results.Ok(new
     {
         access_token =jwt,
@@ -74,9 +90,9 @@ app.Map("/refresh", (RefreshRequest request, RefreshTokenService tokenService) =
     
     tokenService.Revoke(refreshToken);
     var newRefreshToken = Guid.NewGuid().ToString();
-    tokenService.Add(token.UserEmail!, newRefreshToken, DateTime.UtcNow.AddDays(7));
+    tokenService.Add(token.UserEmail!, token.Role, newRefreshToken, DateTime.UtcNow.AddDays(7));
 
-    var newAccessToken = GenerateJwtToken(token.UserEmail);
+    var newAccessToken = GenerateJwtToken(token.UserEmail, token.Role);
 
     return Results.Ok(new 
     {
@@ -85,18 +101,19 @@ app.Map("/refresh", (RefreshRequest request, RefreshTokenService tokenService) =
     });
 });
 
-string GenerateJwtToken(string email)
+string GenerateJwtToken(string email, Roles role)
 {
     var key = new SymmetricSecurityKey(Encoding.ASCII.GetBytes("thisisthesecretforgeneratingakey(mustbeatleast32bitlong)"));
     var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
     
     var claims = new []
     {
-        new Claim(JwtRegisteredClaimNames.Sub, email),
-        new Claim(JwtRegisteredClaimNames.Email, email)
+        new Claim(ClaimTypes.NameIdentifier, email),
+        new Claim(ClaimTypes.Email, email),
+        new Claim(ClaimTypes.Role, role.ToString())
     };
-
-    const int TokenLifetimeInSec = 20;
+    Console.WriteLine(role.ToString());
+    const int TokenLifetimeInSec = 200;
 
     AuthenticationSettings? authsetting = builder.Configuration.GetSection("Authentication").Get<AuthenticationSettings>(); 
     if(authsetting is null 
@@ -115,8 +132,15 @@ string GenerateJwtToken(string email)
         signingCredentials: credentials));
 
 }
-app.MapGet("/secure",
-           [Authorize]() => "You now have access to a protected resource");
+
+
+app.MapGet("/public",
+           () => "You can have access to a public resource");
+app.MapGet("/public-secure",
+           [Authorize]() => "You now have access to a public protected resource");
+app.MapGet("/admin", () => "Hello Admin").RequireAuthorization(policy => policy.RequireRole("Admin"));
+app.MapGet("/worker", () => "Hello worker").RequireAuthorization(policy => policy.RequireRole("Worker"));
+
 
 
 

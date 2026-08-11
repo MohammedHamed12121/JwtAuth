@@ -5,7 +5,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace JwtDemo;
 
-public static class AutheAuthenticationExtensions
+public static class AuthAuthenticationExtensions
 {
     public static void AddJwtAuth(this IServiceCollection service, IConfiguration config)
     {

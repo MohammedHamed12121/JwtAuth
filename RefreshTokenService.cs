@@ -6,11 +6,12 @@ public class RefreshTokenService
 {
     private readonly ConcurrentDictionary<string, RefreshToken> _tokens = new();
 
-    public RefreshToken Add(string email, string token, DateTime expireAt)
+    public RefreshToken Add(string email, Roles role, string token, DateTime expireAt)
     {
         var refreshToken = new RefreshToken
         {
             UserEmail = email,
+            Role = role,
             RefToken = token,
             ExpiredAt = expireAt,
             Revoked = false
